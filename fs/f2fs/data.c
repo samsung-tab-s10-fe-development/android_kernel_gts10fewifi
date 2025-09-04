@@ -3743,20 +3743,11 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 	bool use_cow = false;
 	block_t blkaddr = NULL_ADDR;
 	int err = 0;
-	long temp_x29_in, temp_x30_in;
-	long temp_x29_out, temp_x30_out;
-
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_in));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_in));
-	BUG_ON(temp_x29_in & 0x7);
 
 	trace_f2fs_write_begin(inode, pos, len);
 
 	if (!f2fs_is_checkpoint_ready(sbi)) {
 		err = -ENOSPC;
-		__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-		__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-		BUG_ON(temp_x29_out & 0x7);
 		goto fail;
 	}
 
@@ -3767,12 +3758,8 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 	 */
 	if (index != 0) {
 		err = f2fs_convert_inline_inode(inode);
-		if (err) {
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
+		if (err)
 			goto fail;
-		}
 	}
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
@@ -3788,40 +3775,22 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 							index, fsdata);
 		if (ret < 0) {
 			err = ret;
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
 			goto fail;
 		} else if (ret) {
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
 			return 0;
 		}
 	}
 #endif
 
 repeat:
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-	BUG_ON(temp_x29_out & 0x7);
-
 	/*
 	 * Do not use grab_cache_page_write_begin() to avoid deadlock due to
 	 * wait_for_stable_page. Will wait that below with our IO control.
 	 */
 	page = f2fs_pagecache_get_page(mapping, index,
 				FGP_LOCK | FGP_WRITE | FGP_CREAT, GFP_NOFS);
-
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-	BUG_ON(temp_x29_out & 0x7);
-
 	if (!page) {
 		err = -ENOMEM;
-		__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-		__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-		BUG_ON(temp_x29_out & 0x7);
 		goto fail;
 	}
 
@@ -3836,12 +3805,8 @@ repeat:
 	else
 		err = prepare_write_begin(sbi, folio, pos, len,
 					&blkaddr, &need_balance);
-	if (err) {
-		__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-		__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-		BUG_ON(temp_x29_out & 0x7);
+	if (err)
 		goto fail;
-	}
 
 	if (need_balance && !IS_NOQUOTA(inode) &&
 			has_not_enough_free_secs(sbi, 0, 0)) {
@@ -3857,19 +3822,12 @@ repeat:
 
 	f2fs_wait_on_page_writeback(page, DATA, false, true);
 
-	if (len == PAGE_SIZE || folio_test_uptodate(folio)) {
-		__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-		__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-		BUG_ON(temp_x29_out & 0x7);
+	if (len == PAGE_SIZE || folio_test_uptodate(folio))
 		return 0;
-	}
 
 	if (!(pos & (PAGE_SIZE - 1)) && (pos + len) >= i_size_read(inode) &&
 	    !f2fs_verity_in_progress(inode)) {
 		folio_zero_segment(folio, len, folio_size(folio));
-		__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-		__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-		BUG_ON(temp_x29_out & 0x7);
 		return 0;
 	}
 
@@ -3880,20 +3838,13 @@ repeat:
 		if (!f2fs_is_valid_blkaddr(sbi, blkaddr,
 				DATA_GENERIC_ENHANCE_READ)) {
 			err = -EFSCORRUPTED;
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
 			goto fail;
 		}
 		err = f2fs_submit_page_read(use_cow ?
 				F2FS_I(inode)->cow_inode : inode,
 				folio, blkaddr, 0, true);
-		if (err) {
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
+		if (err)
 			goto fail;
-		}
 
 		folio_lock(folio);
 		if (unlikely(folio->mapping != mapping)) {
@@ -3902,30 +3853,14 @@ repeat:
 		}
 		if (unlikely(!folio_test_uptodate(folio))) {
 			err = -EIO;
-			__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-			__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-			BUG_ON(temp_x29_out & 0x7);
 			goto fail;
 		}
 	}
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-	BUG_ON(temp_x29_out & 0x7);
 	return 0;
 
 fail:
 	f2fs_put_page(page, 1);
-
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-	BUG_ON(temp_x29_out & 0x7);
-
 	f2fs_write_failed(inode, pos + len);
-
-	__asm__ __volatile__ ("mov %0, x29" : "=r" (temp_x29_out));
-	__asm__ __volatile__ ("mov %0, x30" : "=r" (temp_x30_out));
-	BUG_ON(temp_x29_out & 0x7);
-
 	return err;
 }
 

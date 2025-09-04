@@ -5,7 +5,7 @@
  */
 
 #include <linux/user_namespace.h>
-#ifdef CONFIG_KDP_CRED
+#ifdef CONFIG_KDP
 #include <linux/kdp.h>
 #endif
 
@@ -790,7 +790,7 @@ void ksmbd_revert_fsids(struct ksmbd_work *work)
 	WARN_ON(!work->saved_cred);
 
 	cred = current_cred();
-#ifdef CONFIG_KDP_CRED
+#ifdef CONFIG_KDP
 	if (is_kdp_protect_addr((unsigned long)cred))
 		cred = (const struct cred *)(GET_ROCRED_RCU(cred)->reflected_cred);
 #endif
