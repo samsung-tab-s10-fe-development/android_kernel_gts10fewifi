@@ -1,0 +1,7 @@
+# build artifacts (build.sh)
+/out/
+/modules/
+build.sh
+
+# local session settings
+.claude/
