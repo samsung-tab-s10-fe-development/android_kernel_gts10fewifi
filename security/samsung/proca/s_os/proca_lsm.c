@@ -17,14 +17,19 @@
 
 #include <linux/module.h>
 #include <linux/file.h>
-#include <linux/task_integrity.h>
 #include <linux/fs.h>
-#include <linux/proca.h>
 #include <linux/cdev.h>
 
-#include "five_hooks.h"
-#include "five_state.h"
+#if defined(CONFIG_PROCA_GKI_20)
+#include <trace/hooks/security.h>
+#include "gki/task_integrity.h"
+#include "proca.h"
+#else
+#include <linux/proca.h>
+#include <linux/task_integrity.h>
+#endif
 
+#include "five_hooks.h"
 #include "proca_audit.h"
 #include "proca_identity.h"
 #include "proca_certificate.h"
@@ -34,12 +39,14 @@
 #include "proca_config.h"
 #include "proca_porting.h"
 #include "proca_storage.h"
+#include "proca_tint_dev.h"
+#include "gaf/proca_gaf.h"
 
 #define PROCA_DEV_NAME "proca_config"
 
 static void proca_task_free_hook(struct task_struct *task);
-
-#ifdef LINUX_LSM_SUPPORTED
+const char *task_integrity_reset_str(enum task_integrity_reset_cause cause);
+#if defined(LINUX_LSM_SUPPORTED) && !defined(CONFIG_PROCA_GKI_20)
 static struct security_hook_list proca_ops[] = {
 	LSM_HOOK_INIT(task_free, proca_task_free_hook),
 };
@@ -82,6 +89,8 @@ static struct cdev proca_cdev;
 static struct class *proca_class;
 
 static int g_proca_inited;
+
+static const char __UNIQUE_ID(built_with)[] __used __section(".modinfo") __aligned(1) = "built_with=DDK";
 
 static struct proca_task_descr *prepare_proca_task_descr(
 				struct task_struct *task, struct file *file,
@@ -158,6 +167,7 @@ static bool is_bprm(struct task_struct *task, struct file *old_file,
 	return res;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 static struct file *get_real_file(struct file *file)
 {
 	if (locks_inode(file)->i_sb->s_magic == OVERLAYFS_SUPER_MAGIC &&
@@ -166,6 +176,7 @@ static struct file *get_real_file(struct file *file)
 
 	return file;
 }
+#endif
 
 static void proca_hook_file_processed(struct task_struct *task,
 				enum task_integrity_value tint_value,
@@ -174,9 +185,11 @@ static void proca_hook_file_processed(struct task_struct *task,
 {
 	struct proca_task_descr *target_task_descr = NULL;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 	file = get_real_file(file);
 	if (!file)
 		return;
+#endif
 
 	if (task->flags & PF_KTHREAD)
 		return;
@@ -198,8 +211,9 @@ static void proca_hook_file_processed(struct task_struct *task,
 		target_task_descr = prepare_proca_task_descr(
 						task, file, tint_value);
 		if (target_task_descr)
-			proca_table_add_task_descr(g_proca_table,
-						target_task_descr);
+			if (proca_table_add_task_descr(g_proca_table,
+						target_task_descr))
+				destroy_proca_task_descr(target_task_descr);
 	}
 }
 
@@ -218,9 +232,11 @@ static void proca_hook_file_skipped(struct task_struct *task,
 	if (!task || !file)
 		return;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 	file = get_real_file(file);
 	if (!file)
 		return;
+#endif
 
 	if (proca_is_certificate_present(file)) {
 
@@ -257,7 +273,8 @@ static void proca_hook_task_forked(struct task_struct *parent,
 		return;
 	}
 
-	proca_table_add_task_descr(g_proca_table, target_task_descr);
+	if (proca_table_add_task_descr(g_proca_table, target_task_descr))
+		destroy_proca_task_descr(target_task_descr);
 }
 
 static void proca_task_free_hook(struct task_struct *task)
@@ -303,6 +320,32 @@ int proca_get_task_cert(const struct task_struct *task,
 	*cert_size = task_descr->proca_identity.certificate_size;
 	return 0;
 }
+
+#if defined(CONFIG_PROCA_GKI_20)
+static void task_free_wrapper(void *data, struct task_struct *task)
+{
+	proca_task_free_hook(task);
+}
+
+static int __init register_vendor_hooks(void)
+{
+	int error = 0;
+
+	error = register_trace_android_rvh_security_task_free(
+						task_free_wrapper, NULL);
+	return error;
+}
+
+#define proca_security_add_hooks(NOT_USED1, NOT_USED2, NOT_USED3)
+#else
+static inline int __init register_vendor_hooks(void)
+{
+	return 0;
+}
+
+#define proca_security_add_hooks(HOOKS, COUNT, LSM_ID) security_add_hooks(HOOKS, COUNT, LSM_ID)
+
+#endif
 
 static ssize_t proca_cdev_read(struct file *filp, char __user *buf, size_t count,
 			loff_t *f_pos)
@@ -364,8 +407,13 @@ region_cleanup:
 static __init int proca_module_init(void)
 {
 	int ret;
+	struct page *pages = NULL;
 
-	struct page *pages = alloc_pages(GFP_KERNEL | __GFP_ZERO, get_order(PAGE_SIZE * 2));
+	ret = proca_init_gaf();
+	if (ret)
+		return ret;
+
+	pages = alloc_pages(GFP_KERNEL | __GFP_ZERO, get_order(PAGE_SIZE * 2));
 	if (!pages) {
 		PROCA_ERROR_LOG("Failed to allocate memory for g_proca_config\n");
 		return -ENOMEM;
@@ -400,8 +448,20 @@ static __init int proca_module_init(void)
 	if (ret)
 		goto out;
 
-	security_add_hooks(proca_ops, ARRAY_SIZE(proca_ops), "proca_lsm");
+	ret = register_vendor_hooks();
+	if (ret)
+		return ret;
+
+	proca_security_add_hooks(proca_ops, ARRAY_SIZE(proca_ops), proca_lsmid);
 	five_add_hooks(five_ops, ARRAY_SIZE(five_ops));
+
+	proca_task_descr_debugfs_init();
+
+#ifdef CONFIG_PROCA_GKI_20
+	ret = proca_tint_init_dev();
+	if (ret)
+		return ret;
+#endif
 
 	PROCA_INFO_LOG("LSM module was initialized\n");
 	g_proca_inited = 1;
@@ -417,3 +477,7 @@ late_initcall(proca_module_init);
 
 MODULE_DESCRIPTION("PROCA LSM module");
 MODULE_LICENSE("GPL");
+
+#if IS_MODULE(CONFIG_PROCA)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

@@ -63,12 +63,16 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/module.h>
 
+#undef CREATE_TRACE_POINTS
+#include <trace/hooks/module.h>
+
 #ifdef CONFIG_RKP
 #include <linux/rkp.h>
-extern bool rkp_started;
+#ifdef CONFIG_UH_PKVM
 extern u64 early_module_core_text[RKP_EARLY_MODULE];
 extern u64 early_module_core_size[RKP_EARLY_MODULE];
 int rkp_mod_cnt;
+#endif
 #endif
 /*
  * Mutex protects:
@@ -1263,6 +1267,7 @@ static void module_memory_free(void *ptr, enum mod_mem_type type)
 
 static void free_mod_mem(struct module *mod)
 {
+	trace_android_vh_free_mod_mem(mod);
 	for_each_mod_mem_type(type) {
 		struct module_memory *mod_mem = &mod->mem[type];
 
@@ -2099,12 +2104,14 @@ static void module_augment_kernel_taints(struct module *mod, struct load_info *i
 	}
 #ifdef CONFIG_MODULE_SIG
 	mod->sig_ok = info->sig_ok;
+#ifndef CONFIG_MODULE_SIG_PROTECT
 	if (!mod->sig_ok) {
 		pr_notice_once("%s: module verification failed: signature "
 			       "and/or required key missing - tainting "
 			       "kernel\n", mod->name);
 		add_taint_module(mod, TAINT_UNSIGNED_MODULE, LOCKDEP_STILL_OK);
 	}
+#endif
 #else
 	mod->sig_ok = 0;
 #endif
@@ -2295,7 +2302,7 @@ static int move_module(struct module *mod, struct load_info *info)
 		if (type == MOD_TEXT && mod->mem[MOD_TEXT].size != 0)
 			ptr = module_alloc_by_rkp(mod->mem[MOD_TEXT].size, mod->mem[MOD_TEXT].size);
 		else
-			ptr = module_memory_alloc(mod->mem[type].size, type);
+		ptr = module_memory_alloc(mod->mem[type].size, type);
 #else
 		ptr = module_memory_alloc(mod->mem[type].size, type);
 #endif
@@ -2643,6 +2650,7 @@ static noinline int do_init_module(struct module *mod)
 	rcu_assign_pointer(mod->kallsyms, &mod->core_kallsyms);
 #endif
 	module_enable_ro(mod, true);
+	trace_android_vh_set_mod_perm_after_init(mod);
 	mod_tree_remove_init(mod);
 	module_arch_freeing_init(mod);
 #ifdef CONFIG_RKP
@@ -2835,6 +2843,7 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	module_enable_ro(mod, false);
 	module_enable_nx(mod);
 	module_enable_x(mod);
+	trace_android_vh_set_mod_perm_before_init(mod);
 
 	/*
 	 * Mark state as coming so strong_try_module_get() ignores us,
@@ -2850,6 +2859,7 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	rkp_mod_info.init_base_va = (u64)mod->mem[MOD_INIT_TEXT].base;
 	rkp_mod_info.init_text_size = (u64)mod->mem[MOD_INIT_TEXT].size;
 
+#ifdef CONFIG_UH_PKVM
 	if (!rkp_started) {
 		if (rkp_mod_cnt >= RKP_EARLY_MODULE)
 			BUG_ON(rkp_mod_cnt);
@@ -2857,6 +2867,7 @@ static int complete_formation(struct module *mod, struct load_info *info)
 		early_module_core_size[rkp_mod_cnt] = (u64)mod->mem[MOD_TEXT].size;
 		rkp_mod_cnt++;
 	}
+#endif
 	uh_call(UH_APP_RKP, RKP_MODULE_LOAD, RKP_MODULE_PXN_CLEAR, (u64)&rkp_mod_info, 0, 0);
 #endif
 	mutex_unlock(&module_mutex);

@@ -788,11 +788,14 @@ device_initcall(register_warn_debugfs);
  */
 __visible noinstr void __stack_chk_fail(void)
 {
+	unsigned long flags;
 #if IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_SEC_DEBUG_FAULT_MSG_ADV)
 	long tempx8 = 0, tempx9 = 0;
 	long prev_fp, cur_sp;
 #endif
+
 	instrumentation_begin();
+	flags = user_access_save();
 
 #if IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_SEC_DEBUG_FAULT_MSG_ADV)
 	__asm__ __volatile__ ("mov %0, x8" : "=r" (tempx8));
@@ -810,6 +813,8 @@ __visible noinstr void __stack_chk_fail(void)
 #endif
 	panic("stack-protector: Kernel stack is corrupted in: %pB",
 		__builtin_return_address(0));
+
+	user_access_restore(flags);
 	instrumentation_end();
 }
 EXPORT_SYMBOL(__stack_chk_fail);

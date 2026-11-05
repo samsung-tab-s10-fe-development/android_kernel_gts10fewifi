@@ -150,6 +150,8 @@ int task_integrity_copy(struct task_integrity *from, struct task_integrity *to)
 	return rc;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-qualifiers"
 char const * const tint_reset_cause_to_string(
 	enum task_integrity_reset_cause cause)
 {
@@ -181,6 +183,7 @@ char const * const tint_reset_cause_to_string(
 
 	return tint_cause2str[cause];
 }
+#pragma GCC diagnostic pop
 
 /*
  * task_integrity_set_reset_reason
@@ -191,14 +194,17 @@ char const * const tint_reset_cause_to_string(
 void task_integrity_set_reset_reason(struct task_integrity *intg,
 	enum task_integrity_reset_cause cause, struct file *file)
 {
+	(void)file;
 	if (intg->reset_cause != CAUSE_UNSET)
 		return;
 
 	intg->reset_cause = cause;
+#ifdef CONFIG_FIVE_DEBUG
 	if (file) {
 		get_file(file);
 		intg->reset_file = file;
 	}
+#endif
 }
 
 #if defined(CONFIG_SEC_KUNIT)

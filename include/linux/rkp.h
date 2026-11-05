@@ -8,14 +8,10 @@
 #include <linux/spinlock.h>
 #include <linux/uh.h>
 
+#ifdef CONFIG_UH_PKVM
 #define RKP_EARLY_MODULE	2
-
-#ifdef CONFIG_RKP_TEST
-#define RKP_INIT_MAGIC		0x5afe0002
-#else
-#define RKP_INIT_MAGIC		0x5afe0001
 #endif
-
+#define RKP_INIT_MAGIC		0x5afe0001
 #define __rkp_ro __section(".rkp_ro")
 
 enum __RKP_CMD_ID {
@@ -35,19 +31,13 @@ enum __RKP_CMD_ID {
 	RKP_BPF_LOAD = 0x0B,
 	/* Log */
 	RKP_LOG = 0x0C,
-#ifdef CONFIG_RKP_TEST
-	RKP_TEST_INIT = 0x0D,
-	RKP_TEST_GET_PAR = 0x0E,
-	RKP_TEST_EXIT = 0x0F,
-	RKP_TEST_TEXT_VALID = 0x12,
-#endif
 	RKP_KPROBE_PAGE = 0x11,
 };
 
 #define RKP_MODULE_PXN_CLEAR	0x1
 #define RKP_MODULE_PXN_SET		0x2
 
-struct rkp_init { //copy from uh (app/rkp/rkp.h)
+struct rkp_init {
 	u32 magic;
 	u64 reserved1;
 	u64 reserved2;
@@ -86,7 +76,11 @@ extern u64 module_plt_base;
 
 extern bool rkp_started;
 
+#ifdef CONFIG_UH_PKVM
 extern void rkp_init(void);
+#else
+extern void __init rkp_init(void);
+#endif
 extern void rkp_deferred_init(void);
 extern void rkp_robuffer_init(void);
 

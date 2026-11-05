@@ -17,19 +17,32 @@
 
 #include "proca_certificate_db.h"
 #include "proca_storage.h"
+#include "proca_vfs.h"
 #include "proca_log.h"
 
 int proca_get_certificate(struct file *file, char **cert_buff)
 {
+	const char *pathname = NULL;
+	char *pathbuf = NULL;
+	char filename[NAME_MAX];
 	int ret = 0;
 
-	ret = proca_get_certificate_db(file, cert_buff);
+	if (!file)
+		return -EINVAL;
+
+	pathname = proca_d_path(file, &pathbuf, filename);
+	if (!pathbuf)
+		return -ENOMEM;
+
+	ret = proca_get_certificate_db(pathname, cert_buff);
+	__putname(pathbuf);
+
 	return ret;
 }
 
 bool proca_is_certificate_present(struct file *file)
 {
-	return proca_is_certificate_present_db(file);
+	return proca_get_certificate(file, NULL) >= 0;
 }
 
 int __init init_proca_storage(void)
@@ -50,6 +63,10 @@ int __init init_proca_storage(void)
 	if (ret)
 		return ret;
 	PROCA_INFO_LOG("Proca certificate db was initialized\n");
+
+#if IS_MODULE(CONFIG_PROCA)
+	load_all_db();
+#endif
 
 #ifdef CONFIG_PROCA_CERT_DEVICE
 	ret = init_proca_cert_device();

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/sched/signal.h>
 #include <linux/proc_fs.h>
@@ -349,8 +350,9 @@ static void walk_pgd(struct mm_struct *mm, int level, struct test_data *test)
 #define ALLOC_DELAY 10
 #define ALLOC_TRY_MAX 20
 
-static int test_case_guest_mem_alloc_and_free(void) {
-	u64* robufs;
+static int test_case_guest_mem_alloc_and_free(void)
+{
+	u64 *robufs;
 	int i, size = 0, alloc_try_cnt;
 
 	robufs = kmalloc_array(ROBUFS_MAX, sizeof(u64), GFP_KERNEL);
@@ -454,10 +456,10 @@ static int test_case_kernel_range_rwx(void)
 	u64 va_temp;
 
 	struct mem_range test_ranges[] = {
-		{(u64)VMALLOC_START, ((u64)_text) - ((u64)VMALLOC_START), "VMALLOC - STEXT", false, true},
-		{((u64)_text), ((u64)_etext) - ((u64)_text), "STEXT - ETEXT", true, false},
+		{(u64)VMALLOC_START, ((u64)_stext) - ((u64)VMALLOC_START), "VMALLOC - STEXT", false, true},
+		{((u64)_stext), ((u64)_etext) - ((u64)_stext), "STEXT - ETEXT", true, false},
 		{((u64)_etext), ((u64) __end_rodata) - ((u64)_etext), "ETEXT - ERODATA", true, true},
-		{((u64) __end_rodata), MEM_END-((u64) __end_rodata), "ERODATA - MEM_END", false, true},
+		{((u64)__end_rodata), MEM_END -((u64)__end_rodata), "ERODATA - MEM_END", false, true},
 	};
 	int len = sizeof(test_ranges)/sizeof(struct mem_range);
 
@@ -523,7 +525,7 @@ ssize_t	rkp_read(struct file *filep, char __user *buffer, size_t count, loff_t *
 	};
 	int tc_num = sizeof(tc_funcs)/sizeof(struct test_case);
 
-	static bool done = false;
+	static bool done;
 
 	if (done)
 		return 0;

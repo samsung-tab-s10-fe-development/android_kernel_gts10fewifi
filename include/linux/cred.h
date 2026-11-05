@@ -205,6 +205,22 @@ static inline struct cred *get_new_cred(struct cred *cred)
 	return cred;
 }
 
+#ifdef CONFIG_KDP
+static inline struct cred *get_new_cred_module(struct cred *cred)
+{
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		atomic_long_inc(((struct cred_kdp *)cred)->use_cnt);
+	else
+		atomic_long_inc(&cred->usage);
+	return cred;
+}
+#else
+static inline struct cred *get_new_cred_module(struct cred *cred)
+{
+	atomic_long_inc(&cred->usage);
+	return cred;
+}
+#endif
 /**
  * get_cred - Get a reference on a set of credentials
  * @cred: The credentials to reference
@@ -233,6 +249,29 @@ static inline const struct cred *get_cred(const struct cred *cred)
 #endif
 	return get_new_cred(nonconst_cred);
 }
+
+#ifdef CONFIG_KDP
+static inline const struct cred *get_cred_module(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return cred;
+	if ((atomic_long_read(&cred->usage) & KDP_CRED_MAGIC) == KDP_CRED_MAGIC)
+		GET_ROCRED_RCU(cred)->non_rcu = 0;
+	else
+		nonconst_cred->non_rcu = 0;
+	return get_new_cred_module(nonconst_cred);
+}
+#else
+static inline const struct cred *get_cred_module(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return cred;
+	nonconst_cred->non_rcu = 0;
+	return get_new_cred_module(nonconst_cred);
+}
+#endif
 
 static inline const struct cred *get_cred_rcu(const struct cred *cred)
 {
@@ -353,6 +392,8 @@ static inline void put_cred_module(const struct cred *_cred)
 #define get_current_cred()				\
 	(get_cred(current_cred()))
 
+#define get_current_cred_module()				\
+	(get_cred_module(current_cred()))
 /**
  * get_current_user - Get the current task's user_struct
  *

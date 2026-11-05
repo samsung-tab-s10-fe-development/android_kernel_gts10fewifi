@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
 #ifndef __KDP_H__
 #define __KDP_H__
 
@@ -29,11 +31,6 @@ enum __KDP_CMD_ID {
 	MARK_PPT			= 0x09,
 	PROTECT_SELINUX_VAR = 0x0A,
 	SET_CRED_UCOUNTS = 0x0B,
-#ifdef CONFIG_KDP_TEST
-	TEST_INIT			= 0x16,
-	TEST_GET_PAR		= 0x17,
-	TEST_EXIT			= 0x18,
-#endif
 };
 
 //kernel/cred.c
@@ -107,12 +104,17 @@ struct cred_kdp_init {
 };
 
 extern bool kdp_enable;
+#ifdef CONFIG_UH_PKVM
 extern void kdp_init(void);
+#else
+extern void __init kdp_init(void);
+#endif
 extern int get_kdp_kmem_cache_type(const char *name);
 extern bool is_kdp_kmem_cache(struct kmem_cache *s);
 extern bool is_kdp_kmem_cache_name(const char *name);
 extern struct cred_kdp init_cred_kdp;
 
+#ifdef CONFIG_UH_PKVM
 static inline void kdp_set_freeptr(u64 object, u64 offset, u64 fp, u64 freelist_ptr)
 {
 	_uh_call(KVM_HOST_SMCCC_ID(128), UH_APP_KDP | SET_FREEPTR, object, offset, fp, freelist_ptr);
@@ -127,7 +129,24 @@ static inline void kdp_pgd_rwx(u64 addr)
 {
 	_uh_call(KVM_HOST_SMCCC_ID(128), UH_APP_KDP | PGD_RWX, addr, 0, 0, 0);
 }
+#else
+static inline void kdp_set_freeptr(u64 object, u64 offset, u64 fp, u64 freelist_ptr)
+{
+	uh_call(UH_APP_KDP, SET_FREEPTR, object, offset, fp, freelist_ptr);
+}
 
+static inline void kdp_set_slab_ro(u64 addr, u64 type)
+{
+	uh_call(UH_APP_KDP, SET_SLAB_RO, addr, type, 0, 0);
+}
+
+static inline void kdp_pgd_rwx(u64 addr)
+{
+	uh_call(UH_APP_KDP, PGD_RWX, addr, 0, 0, 0);
+}
+#endif
+
+/***************** KDP_CRED *****************/
 #define GET_ROCRED_RCU(cred) \
 ( \
 		(struct ro_rcu_head *)((atomic_long_t *)((struct cred_kdp *)cred)->use_cnt + 1) \
@@ -159,11 +178,19 @@ extern void kdp_free_security(unsigned long tsec);
 extern int is_kdp_protect_addr(unsigned long addr);
 extern void set_rocred_ucounts(struct cred *cred, struct ucounts *new_ucounts);
 
+#ifdef CONFIG_UH_PKVM
 static inline void kdp_set_cred_pgd(u64 current_cred, struct mm_struct *mm)
 {
 	if (kdp_enable && is_kdp_protect_addr((u64)current_cred))
 		_uh_call(KVM_HOST_SMCCC_ID(128), UH_APP_KDP | SET_CRED_PGD, (u64)current_cred, (u64)mm->pgd, 0, 0);
 }
+#else
+static inline void kdp_set_cred_pgd(u64 current_cred, struct mm_struct *mm)
+{
+	if (kdp_enable)
+		uh_call(UH_APP_KDP, SET_CRED_PGD, (u64)current_cred, (u64)mm->pgd, 0, 0);
+}
+#endif
 
 #endif //__ASSEMBLY__
 #endif //__KDP_H__

@@ -21,14 +21,17 @@
 #include <linux/file.h>
 #include <linux/rculist.h>
 #include <linux/sched.h>
-#include <linux/task_integrity.h>
+
+#include "task_integrity.h"
 
 void five_hook_file_processed(struct task_struct *task,
 				struct file *file, void *xattr,
 				size_t xattr_size, int result);
 
 void five_hook_task_forked(struct task_struct *parent,
-				struct task_struct *child);
+				struct task_struct *child,
+				enum task_integrity_value parent_tint_value,
+				enum task_integrity_value child_tint_value);
 
 void five_hook_file_skipped(struct task_struct *task,
 				struct file *file);

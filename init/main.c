@@ -50,6 +50,7 @@
 #include <linux/writeback.h>
 #include <linux/cpu.h>
 #include <linux/cpuset.h>
+#include <linux/memcontrol.h>
 #include <linux/cgroup.h>
 #include <linux/efi.h>
 #include <linux/tick.h>
@@ -110,7 +111,6 @@
 #ifdef CONFIG_RKP
 #include <linux/rkp.h>
 #endif
-
 #ifdef CONFIG_KDP
 #include <linux/kdp.h>
 #endif
@@ -946,10 +946,21 @@ void start_kernel(void)
 	trap_init();
 	mm_core_init();
 	poking_init();
+#ifndef CONFIG_UH_PKVM
+#ifdef CONFIG_RKP
+	rkp_init();
+#endif
+#endif
+
 	ftrace_init();
 
 	/* trace_printk can be enabled here */
 	early_trace_init();
+#ifndef CONFIG_UH_PKVM
+#ifdef CONFIG_KDP
+	kdp_enable = true;
+#endif
+#endif
 
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
@@ -1060,6 +1071,12 @@ void start_kernel(void)
 		efi_enter_virtual_mode();
 #endif
 	thread_stack_cache_init();
+#ifndef CONFIG_UH_PKVM
+#ifdef CONFIG_KDP
+	if (kdp_enable)
+		kdp_init();
+#endif
+#endif
 	cred_init();
 	fork_init();
 	proc_caches_init();
@@ -1075,6 +1092,7 @@ void start_kernel(void)
 	proc_root_init();
 	nsfs_init();
 	cpuset_init();
+	mem_cgroup_init();
 	cgroup_init();
 	taskstats_init_early();
 	delayacct_init();
@@ -1463,14 +1481,14 @@ static int __ref kernel_init(void *unused)
 	kgdb_free_init_mem();
 	exit_boot_config();
 	free_initmem();
+#ifdef CONFIG_UH_PKVM
 #ifdef CONFIG_RKP
 	rkp_robuffer_init();
 	rkp_init();
 #endif
-
 #ifdef CONFIG_KDP
 	kdp_init();
-	kdp_enable = true;
+#endif
 #endif
 	mark_readonly();
 

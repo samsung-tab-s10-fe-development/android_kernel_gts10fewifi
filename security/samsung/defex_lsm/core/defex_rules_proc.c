@@ -70,7 +70,11 @@ __visible_for_testing unsigned char *rules_primary_data;
 #undef DEFEX_RULES_ARRAY_SIZE
 #define DEFEX_RULES_ARRAY_SIZE	DEFEX_RULES_ARRAY_SIZE_FIXED
 #endif
+#if defined(DEFEX_SINGLE_RULES_FILE)
+__visible_for_testing unsigned char rules_primary_data[DEFEX_RULES_ARRAY_SIZE];
+#else
 __visible_for_testing unsigned char rules_primary_data[DEFEX_RULES_ARRAY_SIZE] __ro_after_init;
+#endif /* DEFEX_SINGLE_RULES_FILE */
 #endif /* DEFEX_GKI */
 __visible_for_testing unsigned char *rules_secondary_data;
 #ifdef DEFEX_TRUSTED_MAP_ENABLE
@@ -217,11 +221,11 @@ __visible_for_testing int defex_check_integrity(struct file *f, struct d_tree_it
 	struct shash_desc *shash = NULL;
 	const void *hash = NULL;
 	static const unsigned char buff_zero[SHA256_DIGEST_SIZE] = {0};
-	unsigned char hash_sha256[SHA256_DIGEST_SIZE];
+	unsigned char hash_sha256[SHA256_DIGEST_SIZE] = { 0 };
 	unsigned char *buff = NULL;
 	size_t buff_size = PAGE_SIZE;
 	loff_t file_size = 0;
-	int ret = 0, err = 0, read_size = 0, hash_size;
+	int ret = 0, err = 0, read_size = 0, hash_size = 0;
 
 	if (item == NULL)
 		return -1;
@@ -380,15 +384,18 @@ __visible_for_testing int load_rules_common(struct file *f, int flags)
 			}
 #endif /* DEFEX_GKI */
 			spin_lock(&rules_data_lock);
+			if (d_tree_get_version(data_buff, rules_size) != D_TREE_VERSION_INVALID) {
 #ifdef DEFEX_GKI
-			if (!rules_primary_data) {
-				rules_primary_data = data_buff;
-				data_buff = NULL;
-			}
+				if (!rules_primary_data) {
+					rules_primary_data = data_buff;
+					data_buff = NULL;
+				}
 #else
-			memcpy(rules_primary_data, data_buff, rules_size);
+				memcpy(rules_primary_data, data_buff, rules_size);
 #endif
-			res = d_tree_get_header(rules_primary_data, rules_size, &rules_primary);
+				res = d_tree_get_header(rules_primary_data, rules_size,
+					&rules_primary);
+			}
 			spin_unlock(&rules_data_lock);
 			if (!res) {
 				policy_data = rules_primary_data;
@@ -404,10 +411,13 @@ __visible_for_testing int load_rules_common(struct file *f, int flags)
 		} else {
 			if (rules_size > 0) {
 				spin_lock(&rules_data_lock);
-				rules_secondary_data = data_buff;
-				data_buff = NULL;
-				res = d_tree_get_header(rules_secondary_data, rules_size,
-					&rules_secondary);
+				if (d_tree_get_version(data_buff, rules_size)
+						!= D_TREE_VERSION_INVALID) {
+					rules_secondary_data = data_buff;
+					data_buff = NULL;
+					res = d_tree_get_header(rules_secondary_data, rules_size,
+						&rules_secondary);
+				}
 				spin_unlock(&rules_data_lock);
 				if (!res) {
 					policy_data = rules_secondary_data;
@@ -495,10 +505,11 @@ int load_rules_thread(void *params)
 		}
 		last_time = cur_time;
 
-		if (!keep_thread && (cur_time - start_time) > 600) {
+		if (!(get_load_flags() & LOAD_FLAG_TIMEOUT) && (cur_time - start_time) > 600) {
 			update_load_flags(LOAD_FLAG_TIMEOUT);
 			defex_log_warn("Late load timeout. Try counter = %d", load_counter);
-			break;
+			if (!keep_thread)
+				break;
 		}
 		load_counter++;
 		f = NULL;
@@ -508,17 +519,13 @@ int load_rules_thread(void *params)
 				f = local_fopen(item->name, O_RDONLY, 0);
 				if (!IS_ERR_OR_NULL(f)) {
 					defex_log_info("Late load rules file: %s", item->name);
+					load_rules_common(f, item->flags);
 					break;
+				} else {
+					defex_log_err("Failed to open rules file (%ld), %s",
+						      (long)PTR_ERR(f), item->name);
 				}
 			}
-		}
-		if (IS_ERR(f)) {
-#ifdef DEFEX_GKI
-			defex_log_err("Failed to open rules file (%ld)", (long)PTR_ERR(f));
-#endif /* DEFEX_GKI */
-		} else {
-			if (!IS_ERR_OR_NULL(f))
-				load_rules_common(f, item->flags);
 		}
 		if (!keep_thread && (get_load_flags() & load_both_mask) == load_both_mask)
 			break;
@@ -630,7 +637,8 @@ __visible_for_testing int lookup_tree(const char *file_path,
 						  feature_umhbin_path |
 						  feature_immutable_src_exception |
 						  feature_immutable_dst_exception |
-						  feature_immutable_root);
+						  feature_immutable_root |
+						  feature_immutable_tgt_exception);
 
 	if (!found_item)
 		found_item = &local_item;
@@ -686,7 +694,8 @@ int rules_lookup(const char *target_file, int attribute, struct file *f,
 {
 	int ret = 0;
 #if (defined(DEFEX_SAFEPLACE_ENABLE) || defined(DEFEX_IMMUTABLE_ENABLE) \
-		|| defined(DEFEX_PED_ENABLE))
+	|| defined(DEFEX_PED_ENABLE) || defined(DEFEX_IMMUTABLE_ROOT_ENABLE) \
+	|| defined(DEFEX_IMMUTABLE_ROOT_V2_ENABLE))
 	static const char system_root_txt[] = "/system_root";
 
 	if (check_system_mount() &&

@@ -766,7 +766,6 @@ static int lsm_superblock_alloc(struct super_block *sb)
 
 /*
  * security_integrity_current() is added,
-
  * which has a dependency of CONFIG_KDP.
  * security_integrity_current is added to check integrity of credential context.
  * if CONFIG_KDP is disabled, it will always return 0.
@@ -775,7 +774,8 @@ static int lsm_superblock_alloc(struct super_block *sb)
 	do {							\
 		struct security_hook_list *P;			\
 								\
-		if(security_integrity_current()) break;		\
+		if (security_integrity_current())		\
+			break;								\
 		hlist_for_each_entry(P, &security_hook_heads.FUNC, list) \
 			P->hook.FUNC(__VA_ARGS__);		\
 	} while (0)

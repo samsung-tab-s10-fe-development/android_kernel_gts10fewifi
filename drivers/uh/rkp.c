@@ -4,14 +4,20 @@
 #include <linux/mm.h>
 #include <asm/pgtable.h>
 
-bool rkp_started = false;
+bool rkp_started __rkp_ro;
 static u64 robuffer_base __rkp_ro;
 static u64 robuffer_size __rkp_ro;
+#ifdef CONFIG_UH_PKVM
 u64 early_module_core_text[RKP_EARLY_MODULE] = {0,};
 u64 early_module_core_size[RKP_EARLY_MODULE] = {0,};
+#endif
 
 /* init/main.c */
+#ifdef CONFIG_UH_PKVM
 void rkp_init(void)
+#else
+void __init rkp_init(void)
+#endif
 {
 	struct rkp_init init_data;
 
@@ -29,16 +35,19 @@ void rkp_init(void)
 	init_data.tramp_pgd = (u64)__pa(tramp_pg_dir);
 	init_data.tramp_valias = (u64)TRAMP_VALIAS;
 #endif
+#ifdef CONFIG_UH_PKVM
+	uh_call(UH_APP_RKP, RKP_START, (u64)&init_data, (u64)&rkp_started, 0, 0);
+#else
 	uh_call(UH_APP_RKP, RKP_START, (u64)&init_data, 0, 0, 0);
 	rkp_started = true;
+#endif
 }
 
 /* init/main.c */
-void rkp_deferred_init(void)
+#ifdef CONFIG_UH_PKVM
+void rkp_early_module_support(void)
 {
 	struct module_info early_module_info[RKP_EARLY_MODULE];
-
-	uh_call(UH_APP_RKP, RKP_DEFERRED_START, 0, 0, 0, 0);
 
 	for (int i = 0; i < RKP_EARLY_MODULE; i++) {
 		early_module_info[i].base_va = 0;
@@ -52,19 +61,30 @@ void rkp_deferred_init(void)
 		pr_info("early_module_info[%d] va = %llx", i, (u64)&early_module_info[i]);
 	}
 }
+#endif
+
+void rkp_deferred_init(void)
+{
+	uh_call(UH_APP_RKP, RKP_DEFERRED_START, 0, 0, 0, 0);
+#ifdef CONFIG_UH_PKVM
+	rkp_early_module_support();
+#endif
+}
 
 /* RO BUFFER */
 void rkp_robuffer_init(void)
 {
 	uh_call(UH_APP_RKP, RKP_GET_RO_INFO, (u64)&robuffer_base, (u64)&robuffer_size, 0, 0);
-	printk("robuffer_base: %llx, robuffser_size: %llx\n", robuffer_base, robuffer_size);
+	pr_info("robuffer_base: %llx, robuffser_size: %llx\n", robuffer_base, robuffer_size);
 }
 
 inline phys_addr_t rkp_ro_alloc_phys(void)
 {
 	phys_addr_t alloc_addr = 0;
 
+#ifdef CONFIG_UH_PKVM
 	if (rkp_started)
+#endif
 		uh_call(UH_APP_RKP, RKP_ROBUFFER_ALLOC, (u64)&alloc_addr, 1, 0, 0);
 
 	return alloc_addr;
@@ -74,7 +94,9 @@ inline phys_addr_t rkp_ro_alloc_phys_for_text(void)
 {
 	phys_addr_t alloc_addr = 0;
 
+#ifdef CONFIG_UH_PKVM
 	if (rkp_started)
+#endif
 		uh_call(UH_APP_RKP, RKP_ROBUFFER_ALLOC, (u64)&alloc_addr, 1, 1, 0);
 
 	return alloc_addr;
@@ -84,8 +106,10 @@ inline void *rkp_ro_alloc(void)
 {
 	void *addr = NULL;
 
+#ifdef CONFIG_UH_PKVM
 	if (!rkp_started)
 		return NULL;
+#endif
 
 	uh_call(UH_APP_RKP, RKP_ROBUFFER_ALLOC, (u64)&addr, 1, 0, 0);
 	if (!addr)
@@ -96,7 +120,9 @@ inline void *rkp_ro_alloc(void)
 
 inline void rkp_ro_free(void *addr)
 {
+#ifdef CONFIG_UH_PKVM
 	if (rkp_started)
+#endif
 		uh_call(UH_APP_RKP, RKP_ROBUFFER_FREE, (u64)addr, 0, 0, 0);
 }
 

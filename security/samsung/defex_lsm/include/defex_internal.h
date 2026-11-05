@@ -51,6 +51,8 @@
 #define FEATURE_INTEGRITY_SOFT			(1 << 15)
 #define FEATURE_IMMUTABLE_ROOT			(1 << 16)
 #define FEATURE_IMMUTABLE_ROOT_SOFT		(1 << 17)
+#define FEATURE_IMMUTABLE_ROOT_V2		(1 << 18)
+#define FEATURE_IMMUTABLE_ROOT_V2_SOFT	(1 << 19)
 
 #define DEFEX_TM_DEBUG_VIOLATIONS		(1 << 24)
 #define DEFEX_TM_DEBUG_CALLS			(1 << 25)
@@ -140,8 +142,6 @@ struct defex_context {
 	char *target_name;
 	char *target_name_buff;
 	char *process_name_buff;
-
-	/* NB: cred must be the last field */
 	struct cred *cred;
 };
 
