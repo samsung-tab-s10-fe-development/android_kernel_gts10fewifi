@@ -2,6 +2,7 @@
 /out/
 /modules/
 build.sh
+build.log
 
 # local session settings
 .claude/
